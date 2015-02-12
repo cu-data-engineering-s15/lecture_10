@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <title>Lecture 10 &mdash; Data Engineering &mdash; Spring 2015</title>
+
+    <meta name="description" content="Lecture 10 for Ken Anderson's Spring 2015 Seminar on Data Engineering">
+    <meta name="author" content="Ken Anderson">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/black.css" id="theme">
+
+    <!-- Code syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+      var link = document.createElement( 'link' );
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+      document.getElementsByTagName( 'head' )[0].appendChild( link );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+
+    <div class="reveal">
+
+      <div class="slides">
+
+        <section>
+          <h2>Getting Data from Twitter<br>Take Two</h2>
+          <h4>Lecture 10 &mdash; Data Engineering &mdash; Spring 2015</h4>
+          <p>February 12, 2015</p>
+        </section>
+
+        <section>
+          <h2>Consumer Keys, Access Tokens</h2>
+          <ul>
+            <li>Access to Twitter's APIs are secured by OAuth</li>
+            <li>OAuth is a Web-based security protocol that allows a web service to associate service invocations with users and applications.</li>
+            <li>With Twitter, a consumer key identifies a particular application (and developer).</li>
+            <li>An access token identifies a particular user.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Consumer Keys, Access Tokens</h2>
+          <ul>
+            <li>OAuth allows an application to act on behalf of many users.</li>
+            <li>You might ship your application with its consumer keys but with no access tokens.</li>
+            <li>When a user launches your app for the first time, you send them to Twitter to login and grant access to your account to the app.</li>
+            <li>Twitter will then send an access token/secret for your application to store on behalf of the user.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Consumer Keys, Access Tokens</h2>
+          <ul>
+            <li>With this information, you can do things like <q>Post this tweet on behalf of user <strong>kenbod</strong><q>, even though you otherwise are not connected with that user in any way.</li>
+            <li>When you create an app on Twitter and generate an access token, you short circuit this Web-based authentication process.</li>
+            <li>This allows you to quickly create apps that focus on data collection.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>oauth.properties</h2>
+          <ul>
+            <li>The first step in accessing Twitter data via the REST, Search, and Streaming APIs is to create a file called oauth.properties</li>
+            <li>It should have a single JSON object inside with these properties:
+              <p><img width="1000" height="158" src="images/oauth_properties.png"></p>
+            </li>
+            <li>Fill in the fields with your own values.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Get Tweets</h2>
+          <ul>
+            <li>Let's start with a program that retrieves a single <strong>page</strong> of tweets for a given user id.</li>
+            <li>We'll expand that program to get multiple pages later.</li>
+            <li>The maximum Twitter will let you get is the last 3200 tweets of a given user.
+              <ul>
+                <li>(That's 16 pages of 200 tweets each.)</li>
+              </ul>
+            </li>
+            <li>Create a directory called <code>get_tweets</code></li>
+            <li>Place a copy of oauth.properties in that directory.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Prerequisites</h2>
+          <ol>
+            <li>You need to have access to these commands
+              <ul>
+                <li>ruby</li>
+                <li>gem</li>
+              </ul>
+            </li>
+            <li>My recommendation:
+              <ul>
+                <li>Use <a href="https://github.com/sstephenson/rbenv">rbenv</a> to manage ruby on your machine!</li>
+              </ul>
+            </li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>rbenv set-up (optional)</h2>
+          <ul>
+            <li>Once you have rbenv and <a href="https://github.com/sstephenson/ruby-build">ruby-build</a> installed:
+              <ol>
+                <li>rbenv install 2.2.0</li>
+                <li>rbenv global 2.2.0</li>
+                <li>gem install bundler</li>
+                <li>rbenv rehash</li>
+              </ol>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Verify Installation (optional)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>rbenv version</td>
+                <td>2.2.0 (set by $HOME/.rbenv/version)</td>
+              </tr>
+              <tr>
+                <td>ruby --version</td>
+                <td>ruby 2.2.0p0 ...</td>
+              </tr>
+              <tr>
+                <td>which bundler</td>
+                <td>$HOME/.rbenv/shims/bundler</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>Back to get_tweets</h2>
+          <ul>
+            <li>Head back to the get_tweets directory</li>
+            <li>If you're using rbenv, type <strong>rbenv local 2.2.0</strong>
+              <ul>
+                <li>This ensures that this particular app will always use 2.2.0...</li>
+                <li>... even if you switch to a new version globally.</li>
+                <li>The idea is that rbenv allows you to accurately recreate the environment under which a ruby app was developed.</li>
+                <li>Bundler enables the same thing. We'll use it next.</li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Gemfile</h2>
+          <ul>
+            <li>We will use Bundler to keep track of the gems this application uses</li>
+            <li>Create a file called Gemfile in your directory. Edit it to contain:</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+source 'https://rubygems.org'
+gem 'simple_oauth'
+gem 'typhoeus'
+          </code></pre>
+          <ul>
+            <li>Now install these gems by typing: <code>bundle install</code></li>
+            <li>This will create a file called Gemfile.lock that records the specific versions of the gems that you installed.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Gemfile.lock</h2>
+          <ul>
+            <li>On my machine, Gemfile.lock contains:</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+GEM
+  remote: https://rubygems.org/
+  specs:
+    ethon (0.7.2)
+      ffi (>= 1.3.0)
+    ffi (1.9.6)
+    simple_oauth (0.3.1)
+    typhoeus (0.7.1)
+      ethon (>= 0.7.1)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  simple_oauth
+  typhoeus
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Timeline.rb</h2>
+          <ul>
+            <li>Create a file called Timeline.rb</li>
+            <li>This file will define a class called Timeline</li>
+            <li>Timeline will be responsible for:
+              <ul>
+                <li>making a single API request on a user's timeline</li>
+                <li>handling an error if it should occur</li>
+                <li>on success, it will yield tweets for processing</li>
+              </ul>
+            </li>
+            <li>We will develop this class in stages</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Initial Class</h2>
+          <pre><code data-trim contenteditable>
+require 'bundler/setup'
+
+require 'json'
+require 'simple_oauth'
+require 'typhoeus'
+
+class Timeline
+
+  def initialize(args)
+    @parser      = URI::Parser.new
+    @props       = args.fetch(:props)
+    @screen_name = args.fetch(:screen_name)
+    @url         = url
+  end
+
+  def url
+    'https://api.twitter.com/1.1/statuses/user_timeline.json'
+  end
+
+  private :url
+
+end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>get_tweets.rb</h2>
+          <ul>
+            <li>Let's also create a file called <code>get_tweets.rb</code></li>
+            <li>This file will be our <strong>main program</strong></li>
+            <li>It will do the following:
+              <ul>
+                <li>Load up our oauth properties file</li>
+                <li>Read the desired screen_name from the command line</li>
+                <li>Instantiate the Timeline class</li>
+                <li>Invoke the request for the first page of tweets</li>
+                <li>Store any returned tweets in a file called <strong>tweets.json</strong></li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Initial get_tweets.rb</h2>
+          <pre><code data-trim contenteditable>
+require_relative 'Timeline'
+
+if __FILE__ == $0
+
+  STDOUT.sync = true
+
+  if ARGV.length != 1
+    puts "Usage: ruby get_tweets.rb &lt;screen_name&gt;"
+    exit(1)
+  end
+
+  screen_name = ARGV[0]
+
+  # load oauth.properties
+  # instantiate Timeline
+  # make the request and store tweets in tweets.json
+
+end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Discussion</h2>
+          <ul>
+            <li>require is how ruby imports gems</li>
+            <li>We require <strong>bundler/setup</strong> to ensure that we're using the correct version of the gems we depend on</li>
+            <li>require_relative is how we import other files</li>
+            <li><code>if __FILE__ == $0</code> determines if we've been launched from the command line</li>
+            <li><code>STDOUT.sync = true</code> asks for non-buffered output</li>
+            <li><code>ARGV</code> contains the command line arguments that appear after <code>ruby get_tweets.rb</code></li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Load the Tokens</h2>
+          <ul>
+            <li>Let's handle oauth.properties first</li>
+            <li>We need the tokens in a Hash</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+def load_props
+  input = File.open('oauth.properties')
+  JSON.parse(input.read)
+end
+
+def convert_props(input)
+  props = {}
+  input.keys.each do |key|
+    props[key.to_sym] = input[key]
+  end
+  props
+end
+          </code></pre>
+          <ul>
+            <li>In the main body</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+props = convert_props(load_props)
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Instantiate Timeline</h2>
+          <ul>
+            <li>We now have enough information to instantiate the Timeline class</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+args = {props: props, screen_name: screen_name}
+twitter = Timeline.new(args)
+          </code></pre>
+          <ul>
+            <li>Of course, Timeline doesn't do anything yet! Let's fix that!</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Utilities (1)</h2>
+          <ul>
+            <li>Timeline needs a number of utility functions</li>
+            <li>Since we will need to pass a screen_name as part of the URL, we need to make sure it is properly escaped.</li>
+            <li>The simple_oauth gem provides a URI Parser that will do the trick</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+require 'simple_oauth'
+parser = URI::Parser.new
+parser.escape("kenbod,twitter", /[^a-z0-9\-\.\_\~]/i)
+# outputs 'kenbod%2Ctwitter'
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>prepare()</h2>
+          <ul>
+            <li>Given this info, we add a prepare method to Timeline</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+def prepare(param)
+  @parser.escape(param.to_s, /[^a-z0-9\-\.\_\~]/i)
+end
+          </code></pre>
+          <ul>
+            <li>We will use this function to prepare any params that get passed with our URL</li>
+            <li>For example:
+              <ul>
+                <li>https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=kenbod</li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Utilities (2)</h2>
+          <ul>
+            <li>Twitter requires that we sign every request with an <strong>Authorization</strong> header</li>
+            <li>This is really hard to do; fortunately simple_oauth makes it... simple!</li>
+            <li>To sign the request, we have to pass the method, url, params, and our tokens</li>
+            <li>We will create a method called <strong>authorization</strong> to generate this header</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>authorization</h2>
+          <pre><code data-trim contenteditable>
+def authorization
+  params = {
+    'screen_name' => prepare(@screen_name),
+    'count' => prepare('200') }
+  header = SimpleOAuth::Header.new("GET", @url, params, @props)
+  { 'Authorization' => header.to_s }
+end
+
+private :authorization, :prepare, :url
+          </code></pre>
+          <ul>
+            <li>Note: all utility methods are marked as private</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Utilities (3)</h2>
+          <ul>
+            <li>Our second-to-last utility helps us configure the Typhoeus request</li>
+            <li>We will call it options; it will set the HTTP method, our headers, and our params</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+def options
+  options = {}
+  options[:method]  = :get
+  options[:headers] = authorization
+  options[:params]  = { screen_name: @screen_name, count: 200 }
+  options
+end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Utilities (4)</h2>
+          <ul>
+            <li>Our last utility makes a request and returns the response</li>
+            <li>We will call it make_request</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+def make_request
+  request = Typhoeus::Request.new(@url, options)
+  request.run
+end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Collecting the Tweets</h2>
+          <ul>
+            <li>Now, we just have to go and collect the tweets</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+def collect
+  puts "REQUESTING     : #{Time.now}"
+  response = make_request
+  if response.code == 200
+    puts "SUCCESS      : #{Time.now}"
+    tweets = JSON.parse(response.body)
+    puts "#{tweets.size} tweet(s) received."
+    yield tweets
+  else
+    puts "FAILURE      : #{Time.now}"
+    puts "Response Code: #{response.code}"
+    puts "Response Info: #{response.status_message}"
+    exit(1)
+  end
+end
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Updating get_tweets</h2>
+          <ul>
+            <li>Now that Timeline can actually do something, we have to update get_tweets to take advantage of it!</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+puts "Collecting 200 most recent tweets for '#{screen_name}'"
+
+twitter.collect do |tweets|
+  File.open('tweets.json', 'w') do |f|
+    tweets.each do |tweet|
+      f.puts "#{tweet.to_json}\n"
+    end
+  end
+end
+
+puts "DONE."
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Run it!</h2>
+          <ul>
+            <li>Let's get 200 of the Bad Astronomer's tweets</li>
+          </ul>
+          <pre><code data-trim contenteditable>
+$ ruby get_tweets.rb badastronomer
+Collecting 200 most recent tweets for 'badastronomer'
+REQUESTING   : 2015-02-11 22:42:03 -0700
+SUCCESS      : 2015-02-11 22:42:05 -0700
+200 tweet(s) received.
+DONE.
+          </code></pre>
+          <ul>
+            <li>The output is pretty dense: big JSON objects, one per line!</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>jq to the rescue!</h2>
+          <ul>
+            <li>To work with the tweets.json file, make use of <a href="https://stedolan.github.io/jq/">jq</a></li>
+            <li>To pretty print the file:
+              <ul>
+                <li>jq '.' tweets.json</li>
+              </ul>
+            </li>
+            <li>jq is more than just a pretty printer. Try:
+              <ul>
+                <li>jq '.text' tweets.json</li>
+              </ul>
+            </li>
+            <li>Fun!</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Wrapping Up</h2>
+          <ul>
+            <li>We've now got code to get one page of tweets</li>
+            <li>Next week, we will update this code to get all 3200 tweets
+              <ul>
+                <li>To do that, we will need to incorporate information from <a href="https://dev.twitter.com/rest/public/timelines">Working With Timelines</a> into the code</li>
+              </ul>
+            </li>
+            <li>Also next week, working with the Streaming API</li>
+            <li>After that: NoSQL!</li>
+          </ul>
+        </section>
+
+      </div>
+
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+
+    <script>
+
+      // Full list of configuration options available at:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+
+        transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+        // Optional reveal.js plugins
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+          { src: 'plugin/zoom-js/zoom.js', async: true },
+          { src: 'plugin/notes/notes.js', async: true }
+        ]
+      });
+
+    </script>
+
+  </body>
+</html>
